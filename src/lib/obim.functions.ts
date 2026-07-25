@@ -373,3 +373,233 @@ export const obimEventoDelete = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     return { ok: true };
   });
+
+// ---------- Documental del proyecto ----------
+
+export type ObimDocumento = {
+  id: string;
+  titulo: string;
+  categoria: "memoria" | "acta" | "contrato" | "plano" | "informe" | "presentacion" | "general";
+  fecha: string;
+  doc_path: string | null;
+  doc_nombre: string | null;
+  doc_mime: string | null;
+  notas: string;
+};
+
+export const obimDocumentosList = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async (): Promise<ObimDocumento[]> => {
+    const { data, error } = await db
+      .from("obim_documentos")
+      .select("id,titulo,categoria,fecha,doc_path,doc_nombre,doc_mime,notas")
+      .order("fecha", { ascending: false });
+    if (error) throw new Error(error.message);
+    return (data ?? []) as ObimDocumento[];
+  });
+
+export const obimDocumentoCreate = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(
+    z.object({
+      titulo: z.string().min(1),
+      categoria: z
+        .enum(["memoria", "acta", "contrato", "plano", "informe", "presentacion", "general"])
+        .default("general"),
+      fecha: z.string().min(1),
+      notas: z.string().default(""),
+      fileName: z.string().nullable().default(null),
+      mime: z.string().default(""),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const { data: ins, error: insErr } = await db
+      .from("obim_documentos")
+      .insert({ titulo: data.titulo, categoria: data.categoria, fecha: data.fecha, notas: data.notas })
+      .select("id")
+      .single();
+    if (insErr || !ins) throw new Error(insErr?.message ?? "No se pudo crear el documento.");
+    const id = ins.id as string;
+
+    if (!data.fileName) return { id, path: null as string | null, token: null as string | null };
+
+    const path = `documentos/${id}/${safeName(data.fileName)}`;
+    const { data: signed, error: upErr } = await supabaseAdmin.storage
+      .from(BUCKET)
+      .createSignedUploadUrl(path);
+    if (upErr || !signed) throw new Error(upErr?.message ?? "No se pudo preparar la subida.");
+
+    const { error: updErr } = await db
+      .from("obim_documentos")
+      .update({ doc_path: path, doc_nombre: data.fileName, doc_mime: data.mime })
+      .eq("id", id);
+    if (updErr) throw new Error(updErr.message);
+
+    return { id, path, token: signed.token };
+  });
+
+export const obimDocumentoDelete = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(z.object({ id: z.string().uuid(), path: z.string().nullable().default(null) }))
+  .handler(async ({ data }) => {
+    if (data.path) await supabaseAdmin.storage.from(BUCKET).remove([data.path]);
+    const { error } = await db.from("obim_documentos").delete().eq("id", data.id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const obimDocumentoViewUrl = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(z.object({ path: z.string().min(1) }))
+  .handler(async ({ data }) => {
+    const { data: signed, error } = await supabaseAdmin.storage
+      .from(BUCKET)
+      .createSignedUrl(data.path, 3600);
+    if (error || !signed) throw new Error(error?.message ?? "No se pudo abrir el documento.");
+    return { url: signed.signedUrl };
+  });
+
+// ---------- Avances del proyecto ----------
+
+export type ObimAvance = {
+  id: string;
+  fecha: string;
+  titulo: string;
+  detalle: string;
+  etapa: string;
+};
+
+export const obimAvancesList = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async (): Promise<ObimAvance[]> => {
+    const { data, error } = await db
+      .from("obim_avances")
+      .select("id,fecha,titulo,detalle,etapa")
+      .order("fecha", { ascending: false });
+    if (error) throw new Error(error.message);
+    return (data ?? []) as ObimAvance[];
+  });
+
+export const obimAvanceCreate = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(
+    z.object({
+      fecha: z.string().min(1),
+      titulo: z.string().min(1),
+      detalle: z.string().default(""),
+      etapa: z.string().default(""),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const { error } = await db.from("obim_avances").insert(data);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const obimAvanceDelete = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(z.object({ id: z.string().uuid() }))
+  .handler(async ({ data }) => {
+    const { error } = await db.from("obim_avances").delete().eq("id", data.id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+// ---------- Participantes y subcontratas (con logo) ----------
+
+export type ObimParticipante = {
+  id: string;
+  nombre: string;
+  tipo: "participante" | "subcontrata";
+  rol: string;
+  contacto: string;
+  email: string;
+  telefono: string;
+  logo_path: string | null;
+  logo_url: string | null;
+  activo: boolean;
+};
+
+export const obimParticipantesList = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async (): Promise<ObimParticipante[]> => {
+    const { data, error } = await db
+      .from("obim_participantes")
+      .select("id,nombre,tipo,rol,contacto,email,telefono,logo_path,activo")
+      .order("nombre", { ascending: true });
+    if (error) throw new Error(error.message);
+    const rows = (data ?? []) as Omit<ObimParticipante, "logo_url">[];
+    // URLs firmadas de los logos (1 h) para pintarlos en la lista.
+    return Promise.all(
+      rows.map(async (r) => {
+        let logo_url: string | null = null;
+        if (r.logo_path) {
+          const { data: signed } = await supabaseAdmin.storage
+            .from(BUCKET)
+            .createSignedUrl(r.logo_path, 3600);
+          logo_url = signed?.signedUrl ?? null;
+        }
+        return { ...r, logo_url };
+      }),
+    );
+  });
+
+export const obimParticipanteCreate = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(
+    z.object({
+      nombre: z.string().min(1),
+      tipo: z.enum(["participante", "subcontrata"]).default("participante"),
+      rol: z.string().default(""),
+      contacto: z.string().default(""),
+      email: z.string().default(""),
+      telefono: z.string().default(""),
+      logoFileName: z.string().nullable().default(null),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const { logoFileName, ...row } = data;
+    const { data: ins, error: insErr } = await db
+      .from("obim_participantes")
+      .insert(row)
+      .select("id")
+      .single();
+    if (insErr || !ins) throw new Error(insErr?.message ?? "No se pudo crear el registro.");
+    const id = ins.id as string;
+
+    if (!logoFileName) return { id, path: null as string | null, token: null as string | null };
+
+    const path = `logos/${id}/${safeName(logoFileName)}`;
+    const { data: signed, error: upErr } = await supabaseAdmin.storage
+      .from(BUCKET)
+      .createSignedUploadUrl(path);
+    if (upErr || !signed) throw new Error(upErr?.message ?? "No se pudo preparar la subida.");
+
+    const { error: updErr } = await db
+      .from("obim_participantes")
+      .update({ logo_path: path })
+      .eq("id", id);
+    if (updErr) throw new Error(updErr.message);
+
+    return { id, path, token: signed.token };
+  });
+
+export const obimParticipanteUpdate = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(z.object({ id: z.string().uuid(), activo: z.boolean().optional(), rol: z.string().optional() }))
+  .handler(async ({ data }) => {
+    const { id, ...patch } = data;
+    const { error } = await db.from("obim_participantes").update(patch).eq("id", id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const obimParticipanteDelete = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(z.object({ id: z.string().uuid(), logoPath: z.string().nullable().default(null) }))
+  .handler(async ({ data }) => {
+    if (data.logoPath) await supabaseAdmin.storage.from(BUCKET).remove([data.logoPath]);
+    const { error } = await db.from("obim_participantes").delete().eq("id", data.id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
