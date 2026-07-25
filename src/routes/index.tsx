@@ -135,6 +135,35 @@ const PRINCIPIOS = [
   "La plataforma funciona en entornos locales, privados, híbridos y en la nube.",
 ] as const;
 
+const METODO = [
+  ["MI-01", "Definir prestaciones y requisitos", "Uso, geometría, cargas, fuego, acústica, energía, durabilidad, transporte y montaje."],
+  ["MI-02", "Descomponer el sistema", "Subconjuntos, interfaces, tolerancias, uniones y responsabilidades."],
+  ["MI-03", "Parametrizar", "Dimensiones, reglas, variantes, límites y dependencias."],
+  ["MI-04", "Diseñar para fabricación", "Procesos, maquinaria, materiales, utillajes y control."],
+  ["MI-05", "Diseñar para montaje", "Accesos, izado, secuencia, medios auxiliares y PRL."],
+  ["MI-06", "Validar", "Cálculo, prototipo, ensayo, simulación, normativa y calidad."],
+  ["MI-07", "Costear", "Material, mano de obra, mermas, transporte, montaje y mantenimiento."],
+  ["MI-08", "Documentar", "BIM, planos, instrucciones, fichas, certificados y trazabilidad."],
+  ["MI-09", "Pilotar", "Fabricación y montaje controlados con medición de resultados."],
+  ["MI-10", "Estandarizar", "Biblioteca, catálogo, reglas, formación y mejora continua."],
+] as const;
+
+const PILOTOS = [
+  ["Vivienda industrializada", "Diseño, configuración, presupuesto y fabricación: modelo BIM, sistema modular, acabados, proveedores, coste y gemelo digital."],
+  ["Edificio hotelero", "Repetición y variantes: habitaciones tipo, instalaciones, fabricación, logística y control de cambios."],
+  ["Nave industrial", "Estructura, envolvente y montaje: cálculo, planificación, compras, PRL y trazabilidad de paneles."],
+  ["Rehabilitación", "Información incompleta y existente: captura, diagnóstico, alternativas, normativa y fases."],
+  ["Nuevo sistema constructivo", "Aplicación del Método O-BIM: requisitos, patentes, parametrización, prototipo, ensayo y coste."],
+] as const;
+
+const GOBIERNO = [
+  ["Comité de Dirección", "Aprueba alcance, presupuesto, hitos, riesgos y alianzas."],
+  ["Comité Técnico", "Define estándares, arquitectura, integraciones y criterios de aceptación."],
+  ["Comité de Conocimiento", "Valida fuentes, reglas, versiones y políticas del RAG."],
+  ["Oficina del Programa", "Planificación, seguimiento, actas, dependencias y reporting."],
+  ["Consejo de Usuarios", "Prioriza problemas reales y valida la experiencia de uso."],
+] as const;
+
 function SectionHeading({ n, title }: { n: string; title: string }) {
   return (
     <div className="mb-8 flex items-baseline gap-4 border-b border-border pb-4">
@@ -174,6 +203,18 @@ function ObimPortal() {
               className="hidden rounded-md px-3 py-1.5 text-muted-foreground hover:text-foreground md:inline"
             >
               Hoja de ruta
+            </a>
+            <a
+              href="#metodo"
+              className="hidden rounded-md px-3 py-1.5 text-muted-foreground hover:text-foreground md:inline"
+            >
+              Método
+            </a>
+            <a
+              href="#pilotos"
+              className="hidden rounded-md px-3 py-1.5 text-muted-foreground hover:text-foreground md:inline"
+            >
+              Pilotos
             </a>
             <Link
               to="/center"
@@ -368,11 +409,77 @@ function ObimPortal() {
         </p>
       </section>
 
-      {/* 06 Principios */}
+      {/* 06 Método O-BIM */}
+      <section id="metodo" className="border-t border-border bg-muted/40">
+        <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
+          <SectionHeading n="06" title="Método O-BIM de industrialización" />
+          <p className="mb-10 max-w-3xl text-sm leading-relaxed text-muted-foreground sm:text-base">
+            Metodología propia para transformar una solución constructiva en un sistema repetible,
+            fabricable y verificable. Aplicable a sistemas existentes y al desarrollo de nuevas
+            familias de producto.
+          </p>
+          <div className="grid gap-px overflow-hidden rounded-lg border border-border bg-border sm:grid-cols-2">
+            {METODO.map(([code, etapa, detalle]) => (
+              <div key={code} className="flex gap-4 bg-background p-4">
+                <span className="shrink-0 font-mono text-xs text-ferrari">{code}</span>
+                <div>
+                  <p className="text-sm font-semibold">{etapa}</p>
+                  <p className="mt-0.5 text-sm text-muted-foreground">{detalle}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* 07 Casos piloto */}
+      <section id="pilotos" className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
+        <SectionHeading n="07" title="Casos piloto propuestos" />
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {PILOTOS.map(([nombre, detalle]) => (
+            <div key={nombre} className="rounded-lg border border-border bg-card p-5">
+              <h3 className="text-sm font-semibold">{nombre}</h3>
+              <p className="mt-1.5 text-sm text-muted-foreground">{detalle}</p>
+            </div>
+          ))}
+        </div>
+        <p className="mt-6 max-w-3xl text-sm text-muted-foreground">
+          Cada piloto debe demostrar una mejora medible frente al proceso actual: horas de
+          modelado y coordinación, errores evitados, desviación de coste y plazo de diseño a
+          fabricación.
+        </p>
+      </section>
+
+      {/* 08 Gobierno */}
+      <section id="gobierno" className="border-t border-border bg-muted/40">
+        <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
+          <SectionHeading n="08" title="Gobierno del programa" />
+          <div className="overflow-hidden rounded-lg border border-border">
+            {GOBIERNO.map(([organo, funciones], i) => (
+              <div
+                key={organo}
+                className={`flex flex-col gap-1 bg-background px-5 py-4 sm:flex-row sm:items-baseline sm:gap-6 ${
+                  i > 0 ? "border-t border-border" : ""
+                }`}
+              >
+                <span className="w-56 shrink-0 text-sm font-semibold">{organo}</span>
+                <span className="text-sm text-muted-foreground">{funciones}</span>
+              </div>
+            ))}
+          </div>
+          <p className="mt-6 max-w-3xl text-sm text-muted-foreground">
+            El desarrollo se organiza en 14 paquetes de trabajo, desde dirección y gobierno hasta
+            difusión y transferencia, con criterios de aceptación funcionales, técnicos, de
+            seguridad y de observabilidad en cada incremento.
+          </p>
+        </div>
+      </section>
+
+      {/* 09 Principios */}
       <section className="border-t border-border bg-[#0b0b0c] text-white">
         <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
           <div className="mb-8 flex items-baseline gap-4 border-b border-white/10 pb-4">
-            <span className="font-mono text-sm text-ferrari">06</span>
+            <span className="font-mono text-sm text-ferrari">09</span>
             <h2 className="text-xl font-semibold tracking-tight sm:text-2xl">
               Principios rectores
             </h2>
@@ -399,9 +506,9 @@ function ObimPortal() {
                 Área de participantes
               </h2>
               <p className="mt-2 max-w-xl text-sm text-muted-foreground">
-                Inversión, personal, justificación documental, agenda e hitos del programa se
-                gestionan en el O-BIM Project Center, con acceso restringido a los participantes del
-                proyecto.
+                Documental, avances, participantes y subcontratas, inversión, personal,
+                justificación, agenda, hitos y acceso al código de producción se gestionan en el
+                O-BIM Project Center, con acceso restringido a los participantes del proyecto.
               </p>
             </div>
             <Link
