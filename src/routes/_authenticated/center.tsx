@@ -6,16 +6,20 @@ import { toast } from "sonner";
 import {
   Building2,
   CalendarDays,
+  Clock,
   Code2,
   Euro,
   ExternalLink,
   FileCheck2,
   Flag,
   FolderOpen,
+  KeyRound,
   LayoutDashboard,
   Plus,
+  ShieldCheck,
   TrendingUp,
   Trash2,
+  UserCog,
   Users,
   FileText,
 } from "lucide-react";
@@ -52,6 +56,15 @@ import {
   obimParticipanteDelete,
   obimParticipanteUpdate,
   obimParticipantesList,
+  obimMe,
+  obimUsuariosList,
+  obimUsuarioCreate,
+  obimUsuarioUpdate,
+  obimUsuarioDelete,
+  obimCambiarPin,
+  obimFichajesList,
+  obimFichajeCreate,
+  obimFichajeDelete,
   type ObimEvento,
   type ObimHito,
   type ObimInversion,
@@ -60,6 +73,8 @@ import {
   type ObimDocumento,
   type ObimAvance,
   type ObimParticipante,
+  type ObimUsuario,
+  type ObimFichaje,
 } from "@/lib/obim.functions";
 
 export const Route = createFileRoute("/_authenticated/center")({
@@ -84,10 +99,19 @@ type Tab =
   | "inversion"
   | "personal"
   | "participantes"
+  | "fichaje"
   | "justificacion"
+  | "usuarios"
   | "codigo";
 
-const TABS: { id: Tab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+type TabDef = {
+  id: Tab;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  adminOnly?: boolean;
+};
+
+const TABS: TabDef[] = [
   { id: "resumen", label: "Resumen", icon: LayoutDashboard },
   { id: "avances", label: "Avances", icon: TrendingUp },
   { id: "documental", label: "Documental", icon: FolderOpen },
@@ -95,7 +119,9 @@ const TABS: { id: Tab; label: string; icon: React.ComponentType<{ className?: st
   { id: "inversion", label: "Inversión", icon: Euro },
   { id: "personal", label: "Personal", icon: Users },
   { id: "participantes", label: "Participantes", icon: Building2 },
+  { id: "fichaje", label: "Fichaje", icon: Clock },
   { id: "justificacion", label: "Justificación", icon: FileCheck2 },
+  { id: "usuarios", label: "Usuarios", icon: UserCog, adminOnly: true },
   { id: "codigo", label: "Código", icon: Code2 },
 ];
 
@@ -103,6 +129,10 @@ const eur = new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" 
 
 function ObimCenterPage() {
   const [tab, setTab] = useState<Tab>("resumen");
+  const meFn = useServerFn(obimMe);
+  const { data: me } = useQuery({ queryKey: ["obim", "me"], queryFn: () => meFn() });
+  const isAdmin = me?.rol === "admin";
+  const visibleTabs = TABS.filter((t) => !t.adminOnly || isAdmin);
 
   return (
     <Page>
@@ -113,19 +143,28 @@ function ObimCenterPage() {
               O-<span className="text-ferrari">BIM</span> Project Center
             </h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Gestión del programa: avances, documental, inversión, personal, participantes,
-              justificación, agenda, hitos y código de producción.
+              Seguimiento integral del proyecto de I+D+i: contenido y core, partidas, plazos,
+              personal, fichaje y usuarios.
             </p>
           </div>
-          <Link
-            to="/"
-            className="shrink-0 rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
-          >
-            Portal público
-          </Link>
+          <div className="flex shrink-0 items-center gap-2">
+            {me && (
+              <span className="hidden items-center gap-1.5 rounded-full border border-border px-2.5 py-1 text-xs text-muted-foreground sm:inline-flex">
+                {isAdmin ? <ShieldCheck className="h-3.5 w-3.5 text-ferrari" /> : null}
+                {me.nombre || me.email} · {isAdmin ? "admin" : "participante"}
+              </span>
+            )}
+            <CambiarPinButton />
+            <Link
+              to="/"
+              className="rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              Portal público
+            </Link>
+          </div>
         </div>
         <nav className="mt-4 flex gap-1 overflow-x-auto border-b border-border pb-px [scrollbar-width:none]">
-          {TABS.map((t) => (
+          {visibleTabs.map((t) => (
             <button
               key={t.id}
               type="button"
@@ -151,10 +190,77 @@ function ObimCenterPage() {
         {tab === "inversion" && <Inversion />}
         {tab === "personal" && <Personal />}
         {tab === "participantes" && <Participantes />}
+        {tab === "fichaje" && <Fichaje isAdmin={isAdmin} />}
         {tab === "justificacion" && <Justificacion />}
+        {tab === "usuarios" && isAdmin && <Usuarios />}
         {tab === "codigo" && <Codigo />}
       </div>
     </Page>
+  );
+}
+
+// ---------- Cambiar el propio PIN ----------
+
+function CambiarPinButton() {
+  const [open, setOpen] = useState(false);
+  const [pin, setPin] = useState("");
+  const changeFn = useServerFn(obimCambiarPin);
+  const save = useMutation({
+    mutationFn: () => changeFn({ data: { pin } }),
+    onSuccess: () => {
+      toast.success("PIN actualizado.");
+      setPin("");
+      setOpen(false);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+      >
+        <KeyRound className="h-3.5 w-3.5" /> Cambiar PIN
+      </button>
+    );
+  }
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (pin.length >= 6) save.mutate();
+      }}
+      className="flex items-center gap-1.5"
+    >
+      <input
+        type="password"
+        inputMode="numeric"
+        value={pin}
+        onChange={(e) => setPin(e.target.value)}
+        placeholder="Nuevo PIN (6+)"
+        autoFocus
+        className="w-32 rounded-md border border-border bg-background px-2 py-1.5 text-sm outline-none focus:border-primary"
+      />
+      <button
+        type="submit"
+        disabled={pin.length < 6 || save.isPending}
+        className="rounded-md bg-primary px-2.5 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+      >
+        Guardar
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          setOpen(false);
+          setPin("");
+        }}
+        className="rounded-md border border-border px-2 py-1.5 text-xs text-muted-foreground hover:bg-muted"
+      >
+        ✕
+      </button>
+    </form>
   );
 }
 
@@ -1467,6 +1573,424 @@ function Codigo() {
           </a>
         ))}
       </div>
+    </div>
+  );
+}
+
+// ---------- Fichaje / tickaje ----------
+
+function Fichaje({ isAdmin }: { isAdmin: boolean }) {
+  const qc = useQueryClient();
+  const listFn = useServerFn(obimFichajesList);
+  const addFn = useServerFn(obimFichajeCreate);
+  const delFn = useServerFn(obimFichajeDelete);
+  const usersFn = useServerFn(obimUsuariosList);
+
+  const { data: items = [] } = useQuery({ queryKey: ["obim", "fichajes"], queryFn: () => listFn() });
+  // Solo el admin puede fichar por otra persona → carga la lista de usuarios.
+  const { data: usuarios = [] } = useQuery({
+    queryKey: ["obim", "usuarios"],
+    queryFn: () => usersFn(),
+    enabled: isAdmin,
+  });
+
+  const [fecha, setFecha] = useState(() => new Date().toISOString().slice(0, 10));
+  const [horas, setHoras] = useState("");
+  const [tarea, setTarea] = useState("");
+  const [etapa, setEtapa] = useState("");
+  const [usuarioId, setUsuarioId] = useState("");
+
+  const add = useMutation({
+    mutationFn: () =>
+      addFn({
+        data: {
+          fecha,
+          horas: Number(horas),
+          tarea,
+          etapa,
+          ...(isAdmin && usuarioId ? { usuario_id: usuarioId } : {}),
+        },
+      }),
+    onSuccess: () => {
+      setHoras("");
+      setTarea("");
+      setEtapa("");
+      qc.invalidateQueries({ queryKey: ["obim", "fichajes"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const del = useMutation({
+    mutationFn: (id: string) => delFn({ data: { id } }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["obim", "fichajes"] }),
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const totalHoras = items.reduce((s, f) => s + Number(f.horas), 0);
+  const totalCoste = items.reduce((s, f) => s + Number(f.coste), 0);
+
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-4 sm:grid-cols-3">
+        <div className="rounded-lg border border-border bg-card p-4">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Horas registradas</p>
+          <p className="mt-1 font-mono text-2xl">{totalHoras.toLocaleString("es-ES")}</p>
+        </div>
+        <div className="rounded-lg border border-border bg-card p-4 sm:col-span-2">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">
+            Coste imputado al proyecto {isAdmin ? "(todos)" : "(tuyo)"}
+          </p>
+          <p className="mt-1 font-mono text-2xl">{eur.format(totalCoste)}</p>
+        </div>
+      </div>
+
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (Number(horas) > 0) add.mutate();
+        }}
+        className="grid gap-2 rounded-lg border border-border bg-card p-4 sm:grid-cols-[auto_auto_1fr_auto_auto]"
+      >
+        <input
+          type="date"
+          value={fecha}
+          onChange={(e) => setFecha(e.target.value)}
+          className="rounded-md border border-border bg-background px-3 py-1.5 text-sm outline-none focus:border-primary"
+        />
+        <input
+          type="number"
+          min="0"
+          step="0.25"
+          value={horas}
+          onChange={(e) => setHoras(e.target.value)}
+          placeholder="Horas"
+          className="w-24 rounded-md border border-border bg-background px-3 py-1.5 text-sm outline-none focus:border-primary"
+        />
+        <input
+          value={tarea}
+          onChange={(e) => setTarea(e.target.value)}
+          placeholder="Tarea realizada"
+          className="rounded-md border border-border bg-background px-3 py-1.5 text-sm outline-none focus:border-primary"
+        />
+        {isAdmin ? (
+          <select
+            value={usuarioId}
+            onChange={(e) => setUsuarioId(e.target.value)}
+            className="rounded-md border border-border bg-background px-2 py-1.5 text-sm outline-none focus:border-primary"
+          >
+            <option value="">Yo mismo</option>
+            {usuarios.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.nombre || u.email}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <input
+            value={etapa}
+            onChange={(e) => setEtapa(e.target.value)}
+            placeholder="Etapa"
+            className="w-32 rounded-md border border-border bg-background px-3 py-1.5 text-sm outline-none focus:border-primary"
+          />
+        )}
+        <button
+          type="submit"
+          disabled={!(Number(horas) > 0) || add.isPending}
+          className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+        >
+          <Plus className="h-4 w-4" /> Fichar
+        </button>
+      </form>
+
+      <div className="overflow-x-auto rounded-lg border border-border bg-card">
+        <table className="w-full min-w-[640px] text-sm">
+          <thead>
+            <tr className="border-b border-border bg-muted/60 text-left text-xs uppercase tracking-wide text-muted-foreground">
+              <th className="px-4 py-2.5 font-medium">Fecha</th>
+              {isAdmin && <th className="px-4 py-2.5 font-medium">Persona</th>}
+              <th className="px-4 py-2.5 font-medium">Tarea</th>
+              <th className="px-4 py-2.5 text-right font-medium">Horas</th>
+              <th className="px-4 py-2.5 text-right font-medium">Coste</th>
+              <th className="px-4 py-2.5" />
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {items.length === 0 && (
+              <tr>
+                <td colSpan={isAdmin ? 6 : 5} className="px-4 py-6 text-center text-muted-foreground">
+                  Sin fichajes registrados.
+                </td>
+              </tr>
+            )}
+            {items.map((f: ObimFichaje) => (
+              <tr key={f.id} className="group">
+                <td className="px-4 py-2.5 font-mono text-xs text-muted-foreground">{f.fecha}</td>
+                {isAdmin && <td className="px-4 py-2.5">{f.usuario_nombre}</td>}
+                <td className="px-4 py-2.5">
+                  {f.tarea}
+                  {f.etapa ? <span className="text-muted-foreground"> · {f.etapa}</span> : null}
+                </td>
+                <td className="px-4 py-2.5 text-right font-mono">{Number(f.horas)}</td>
+                <td className="px-4 py-2.5 text-right font-mono">{eur.format(Number(f.coste))}</td>
+                <td className="px-4 py-2.5 text-right">
+                  <button
+                    type="button"
+                    onClick={() => del.mutate(f.id)}
+                    aria-label="Borrar fichaje"
+                    className="text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-destructive"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        El coste de cada fichaje se calcula con el coste/hora de la persona en el momento de
+        registrarlo y se imputa al proyecto.
+      </p>
+    </div>
+  );
+}
+
+// ---------- Gestión de usuarios (solo admin) ----------
+
+function Usuarios() {
+  const qc = useQueryClient();
+  const listFn = useServerFn(obimUsuariosList);
+  const addFn = useServerFn(obimUsuarioCreate);
+  const updFn = useServerFn(obimUsuarioUpdate);
+  const delFn = useServerFn(obimUsuarioDelete);
+
+  const { data: items = [], error } = useQuery({
+    queryKey: ["obim", "usuarios"],
+    queryFn: () => listFn(),
+  });
+
+  const [nombre, setNombre] = useState("");
+  const [email, setEmail] = useState("");
+  const [pin, setPin] = useState("");
+  const [rol, setRol] = useState<ObimUsuario["rol"]>("participante");
+  const [puesto, setPuesto] = useState("");
+  const [dedicacion, setDedicacion] = useState("100");
+  const [costeHora, setCosteHora] = useState("");
+
+  const add = useMutation({
+    mutationFn: () =>
+      addFn({
+        data: {
+          email: email.trim(),
+          pin,
+          nombre,
+          rol,
+          puesto,
+          dedicacion_pct: Number(dedicacion) || 100,
+          coste_hora: Number(costeHora) || 0,
+          telefono: "",
+          notas: "",
+        },
+      }),
+    onSuccess: () => {
+      setNombre("");
+      setEmail("");
+      setPin("");
+      setPuesto("");
+      setDedicacion("100");
+      setCosteHora("");
+      setRol("participante");
+      toast.success("Usuario dado de alta.");
+      qc.invalidateQueries({ queryKey: ["obim", "usuarios"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const upd = useMutation({
+    mutationFn: (d: Parameters<typeof updFn>[0]["data"]) => updFn({ data: d }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["obim", "usuarios"] }),
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const del = useMutation({
+    mutationFn: (id: string) => delFn({ data: { id } }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["obim", "usuarios"] }),
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  if (error) {
+    return (
+      <p className="rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+        {(error as Error).message}
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (email.trim() && pin.length >= 6) add.mutate();
+        }}
+        className="space-y-2 rounded-lg border border-border bg-card p-4"
+      >
+        <p className="text-sm font-medium">Dar de alta un participante</p>
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          <input
+            value={nombre}
+            onChange={(e) => setNombre(e.target.value)}
+            placeholder="Nombre y apellidos"
+            className="rounded-md border border-border bg-background px-3 py-1.5 text-sm outline-none focus:border-primary"
+          />
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="Email (usuario de acceso)"
+            className="rounded-md border border-border bg-background px-3 py-1.5 text-sm outline-none focus:border-primary"
+          />
+          <input
+            type="text"
+            inputMode="numeric"
+            value={pin}
+            onChange={(e) => setPin(e.target.value)}
+            placeholder="PIN inicial (6+ dígitos)"
+            className="rounded-md border border-border bg-background px-3 py-1.5 text-sm outline-none focus:border-primary"
+          />
+          <select
+            value={rol}
+            onChange={(e) => setRol(e.target.value as ObimUsuario["rol"])}
+            className="rounded-md border border-border bg-background px-2 py-1.5 text-sm outline-none focus:border-primary"
+          >
+            <option value="participante">Participante</option>
+            <option value="admin">Administrador</option>
+          </select>
+          <input
+            value={puesto}
+            onChange={(e) => setPuesto(e.target.value)}
+            placeholder="Puesto / rol en el proyecto"
+            className="rounded-md border border-border bg-background px-3 py-1.5 text-sm outline-none focus:border-primary"
+          />
+          <input
+            type="number"
+            min="0"
+            max="100"
+            value={dedicacion}
+            onChange={(e) => setDedicacion(e.target.value)}
+            placeholder="% dedicación"
+            className="rounded-md border border-border bg-background px-3 py-1.5 text-sm outline-none focus:border-primary"
+          />
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            value={costeHora}
+            onChange={(e) => setCosteHora(e.target.value)}
+            placeholder="Coste/hora €"
+            className="rounded-md border border-border bg-background px-3 py-1.5 text-sm outline-none focus:border-primary"
+          />
+          <button
+            type="submit"
+            disabled={!email.trim() || pin.length < 6 || add.isPending}
+            className="inline-flex items-center justify-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+          >
+            <Plus className="h-4 w-4" /> Alta
+          </button>
+        </div>
+      </form>
+
+      <div className="overflow-x-auto rounded-lg border border-border bg-card">
+        <table className="w-full min-w-[760px] text-sm">
+          <thead>
+            <tr className="border-b border-border bg-muted/60 text-left text-xs uppercase tracking-wide text-muted-foreground">
+              <th className="px-4 py-2.5 font-medium">Nombre</th>
+              <th className="px-4 py-2.5 font-medium">Email</th>
+              <th className="px-4 py-2.5 font-medium">Puesto</th>
+              <th className="px-4 py-2.5 font-medium">Rol</th>
+              <th className="px-4 py-2.5 text-right font-medium">Ded.</th>
+              <th className="px-4 py-2.5 text-right font-medium">€/h</th>
+              <th className="px-4 py-2.5 font-medium">Estado</th>
+              <th className="px-4 py-2.5" />
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {items.length === 0 && (
+              <tr>
+                <td colSpan={8} className="px-4 py-6 text-center text-muted-foreground">
+                  Sin usuarios.
+                </td>
+              </tr>
+            )}
+            {items.map((u: ObimUsuario) => (
+              <tr key={u.id} className="group">
+                <td className="px-4 py-2.5">{u.nombre || "—"}</td>
+                <td className="px-4 py-2.5 text-muted-foreground">{u.email}</td>
+                <td className="px-4 py-2.5 text-muted-foreground">{u.puesto || "—"}</td>
+                <td className="px-4 py-2.5">
+                  <select
+                    value={u.rol}
+                    onChange={(e) =>
+                      upd.mutate({ id: u.id, rol: e.target.value as ObimUsuario["rol"] })
+                    }
+                    className="rounded-md border border-border bg-background px-2 py-1 text-xs outline-none focus:border-primary"
+                  >
+                    <option value="participante">participante</option>
+                    <option value="admin">admin</option>
+                  </select>
+                </td>
+                <td className="px-4 py-2.5 text-right font-mono text-xs">{Number(u.dedicacion_pct)}%</td>
+                <td className="px-4 py-2.5 text-right font-mono text-xs">{eur.format(Number(u.coste_hora))}</td>
+                <td className="px-4 py-2.5">
+                  <button
+                    type="button"
+                    onClick={() => upd.mutate({ id: u.id, activo: !u.activo })}
+                    className={`rounded-full border px-2.5 py-0.5 text-xs ${
+                      u.activo
+                        ? "border-green-600/40 bg-green-600/10 text-green-700"
+                        : "border-border text-muted-foreground"
+                    }`}
+                  >
+                    {u.activo ? "Activo" : "Inactivo"}
+                  </button>
+                </td>
+                <td className="px-4 py-2.5 text-right">
+                  <div className="flex items-center justify-end gap-2 opacity-0 transition-opacity group-hover:opacity-100">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const p = window.prompt(`Nuevo PIN para ${u.email} (6+ dígitos):`);
+                        if (p && /^\d{6,}$/.test(p)) upd.mutate({ id: u.id, pin: p });
+                        else if (p) toast.error("El PIN debe tener al menos 6 dígitos.");
+                      }}
+                      aria-label="Cambiar PIN"
+                      className="text-muted-foreground hover:text-foreground"
+                    >
+                      <KeyRound className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (window.confirm(`¿Eliminar a ${u.email}? Perderá el acceso.`))
+                          del.mutate(u.id);
+                      }}
+                      aria-label="Eliminar usuario"
+                      className="text-muted-foreground hover:text-destructive"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Cada usuario entra con su email y PIN. El coste/hora se usa para calcular el coste imputado
+        en los fichajes. Un participante solo ve y ficha lo suyo; un administrador ve todo y gestiona
+        los usuarios.
+      </p>
     </div>
   );
 }
