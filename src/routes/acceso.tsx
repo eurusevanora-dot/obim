@@ -19,7 +19,7 @@ export const Route = createFileRoute("/acceso")({
 function AccesoPage() {
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [pin, setPin] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -27,12 +27,15 @@ function AccesoPage() {
     e.preventDefault();
     setBusy(true);
     setError(null);
-    const { error: err } = await supabase.auth.signInWithPassword({ email, password });
+    const { error: err } = await supabase.auth.signInWithPassword({
+      email: email.trim(),
+      password: pin,
+    });
     setBusy(false);
     if (err) {
       setError(
         err.message === "Invalid login credentials"
-          ? "Credenciales incorrectas."
+          ? "Email o PIN incorrectos, o cuenta no autorizada."
           : err.message,
       );
       return;
@@ -75,13 +78,15 @@ function AccesoPage() {
             className="mb-4 w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
           />
 
-          <label className="mb-1 block text-sm font-medium">Contraseña</label>
+          <label className="mb-1 block text-sm font-medium">PIN</label>
           <input
             type="password"
+            inputMode="numeric"
             autoComplete="current-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="mb-4 w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
+            value={pin}
+            onChange={(e) => setPin(e.target.value)}
+            placeholder="••••••"
+            className="mb-4 w-full rounded-md border border-border bg-background px-3 py-2 text-sm tracking-[0.3em] outline-none focus:border-primary"
           />
 
           {error && (
@@ -92,7 +97,7 @@ function AccesoPage() {
 
           <button
             type="submit"
-            disabled={busy || !email || !password}
+            disabled={busy || !email || pin.length < 6}
             className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
           >
             {busy && <Loader2 className="h-4 w-4 animate-spin" />}
@@ -100,7 +105,8 @@ function AccesoPage() {
           </button>
 
           <p className="mt-4 text-center text-xs text-muted-foreground">
-            Acceso restringido a los participantes del proyecto.
+            Acceso solo para usuarios autorizados con email y PIN. Pide el alta al administrador del
+            proyecto.
           </p>
         </form>
       </main>

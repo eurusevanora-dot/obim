@@ -226,12 +226,32 @@ function ObimPortal() {
         </div>
       </header>
 
+      {/* Aviso de estado */}
+      <div className="border-b border-amber-500/30 bg-amber-500/10">
+        <div className="mx-auto flex max-w-6xl items-center gap-2 px-4 py-2 text-xs sm:px-6">
+          <span className="inline-block h-2 w-2 shrink-0 animate-pulse rounded-full bg-amber-500" />
+          <span className="font-medium text-amber-700 dark:text-amber-400">
+            Proyecto en desarrollo
+          </span>
+          <span className="text-muted-foreground">
+            — esta página es una presentación del proyecto de I+D+i; la gestión completa está en el
+            área privada.
+          </span>
+        </div>
+      </div>
+
       {/* Hero */}
       <section className="border-b border-border bg-[#0b0b0c] text-white">
         <div className="mx-auto max-w-6xl px-4 py-20 sm:px-6 sm:py-28">
-          <p className="mb-4 font-mono text-xs uppercase tracking-[0.25em] text-white/50">
-            Proyecto de I+D+i · Construcción industrializada
-          </p>
+          <div className="mb-4 flex flex-wrap items-center gap-3">
+            <p className="font-mono text-xs uppercase tracking-[0.25em] text-white/50">
+              Proyecto de I+D+i · Construcción industrializada
+            </p>
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-400/40 bg-amber-400/10 px-2.5 py-0.5 font-mono text-[11px] uppercase tracking-wide text-amber-300">
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+              En desarrollo
+            </span>
+          </div>
           <h1 className="max-w-4xl text-4xl font-semibold leading-tight tracking-tight sm:text-6xl">
             Una capa de inteligencia y coordinación sobre todo el ciclo de la construcción.
           </h1>

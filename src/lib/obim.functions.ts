@@ -603,3 +603,253 @@ export const obimParticipanteDelete = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     return { ok: true };
   });
+
+// ---------- Usuarios autorizados (login email+PIN) y roles ----------
+
+export type ObimUsuario = {
+  id: string;
+  auth_user_id: string | null;
+  email: string;
+  nombre: string;
+  rol: "admin" | "participante";
+  puesto: string;
+  dedicacion_pct: number;
+  coste_hora: number;
+  telefono: string;
+  notas: string;
+  activo: boolean;
+};
+
+// Perfil del usuario de la sesión actual (para saber su rol en la UI).
+export const obimMe = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<ObimUsuario | null> => {
+    const uid = (context as { userId?: string }).userId;
+    if (!uid) return null;
+    const { data } = await db
+      .from("obim_usuarios")
+      .select("id,auth_user_id,email,nombre,rol,puesto,dedicacion_pct,coste_hora,telefono,notas,activo")
+      .eq("auth_user_id", uid)
+      .maybeSingle();
+    return (data ?? null) as ObimUsuario | null;
+  });
+
+async function exigirAdmin(context: unknown): Promise<void> {
+  const uid = (context as { userId?: string }).userId;
+  if (!uid) throw new Error("No autorizado.");
+  const { data } = await db.from("obim_usuarios").select("rol,activo").eq("auth_user_id", uid).maybeSingle();
+  if (!data || data.rol !== "admin" || !data.activo) throw new Error("Solo un administrador puede gestionar usuarios.");
+}
+
+export const obimUsuariosList = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<ObimUsuario[]> => {
+    await exigirAdmin(context);
+    const { data, error } = await db
+      .from("obim_usuarios")
+      .select("id,auth_user_id,email,nombre,rol,puesto,dedicacion_pct,coste_hora,telefono,notas,activo")
+      .order("nombre", { ascending: true });
+    if (error) throw new Error(error.message);
+    return (data ?? []) as ObimUsuario[];
+  });
+
+// Alta de participante: crea la cuenta de auth (email + PIN) y su ficha.
+export const obimUsuarioCreate = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(
+    z.object({
+      email: z.string().email(),
+      pin: z.string().regex(/^\d{6,}$/u, "El PIN debe tener al menos 6 dígitos."),
+      nombre: z.string().default(""),
+      rol: z.enum(["admin", "participante"]).default("participante"),
+      puesto: z.string().default(""),
+      dedicacion_pct: z.number().min(0).max(100).default(100),
+      coste_hora: z.number().min(0).default(0),
+      telefono: z.string().default(""),
+      notas: z.string().default(""),
+    }),
+  )
+  .handler(async ({ data, context }) => {
+    await exigirAdmin(context);
+    const admin = (supabaseAdmin as unknown as {
+      auth: { admin: { createUser: (a: unknown) => Promise<{ data: { user: { id: string } | null }; error: { message: string } | null }> } };
+    }).auth.admin;
+    const { data: created, error: cErr } = await admin.createUser({
+      email: data.email,
+      password: data.pin,
+      email_confirm: true,
+    });
+    if (cErr || !created?.user) throw new Error(cErr?.message ?? "No se pudo crear la cuenta.");
+    const authId = created.user.id;
+    const { error } = await db.from("obim_usuarios").insert({
+      auth_user_id: authId,
+      email: data.email,
+      nombre: data.nombre,
+      rol: data.rol,
+      puesto: data.puesto,
+      dedicacion_pct: data.dedicacion_pct,
+      coste_hora: data.coste_hora,
+      telefono: data.telefono,
+      notas: data.notas,
+      activo: true,
+    });
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const obimUsuarioUpdate = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(
+    z.object({
+      id: z.string().uuid(),
+      nombre: z.string().optional(),
+      rol: z.enum(["admin", "participante"]).optional(),
+      puesto: z.string().optional(),
+      dedicacion_pct: z.number().min(0).max(100).optional(),
+      coste_hora: z.number().min(0).optional(),
+      telefono: z.string().optional(),
+      notas: z.string().optional(),
+      activo: z.boolean().optional(),
+      pin: z.string().regex(/^\d{6,}$/u).optional(),
+    }),
+  )
+  .handler(async ({ data, context }) => {
+    await exigirAdmin(context);
+    const { id, pin, ...patch } = data;
+    const { data: row } = await db.from("obim_usuarios").select("auth_user_id").eq("id", id).maybeSingle();
+    if (Object.keys(patch).length) {
+      const { error } = await db.from("obim_usuarios").update(patch).eq("id", id);
+      if (error) throw new Error(error.message);
+    }
+    if (pin && row?.auth_user_id) {
+      const admin = (supabaseAdmin as unknown as {
+        auth: { admin: { updateUserById: (id: string, a: unknown) => Promise<{ error: { message: string } | null }> } };
+      }).auth.admin;
+      const { error } = await admin.updateUserById(row.auth_user_id, { password: pin });
+      if (error) throw new Error(error.message);
+    }
+    return { ok: true };
+  });
+
+export const obimUsuarioDelete = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(z.object({ id: z.string().uuid() }))
+  .handler(async ({ data, context }) => {
+    await exigirAdmin(context);
+    const { data: row } = await db.from("obim_usuarios").select("auth_user_id").eq("id", data.id).maybeSingle();
+    const { error } = await db.from("obim_usuarios").delete().eq("id", data.id);
+    if (error) throw new Error(error.message);
+    if (row?.auth_user_id) {
+      const admin = (supabaseAdmin as unknown as {
+        auth: { admin: { deleteUser: (id: string) => Promise<{ error: { message: string } | null }> } };
+      }).auth.admin;
+      await admin.deleteUser(row.auth_user_id).catch(() => {});
+    }
+    return { ok: true };
+  });
+
+// Cambiar el propio PIN (cualquier usuario autenticado).
+export const obimCambiarPin = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(z.object({ pin: z.string().regex(/^\d{6,}$/u, "El PIN debe tener al menos 6 dígitos.") }))
+  .handler(async ({ data, context }) => {
+    const uid = (context as { userId?: string }).userId;
+    if (!uid) throw new Error("No autorizado.");
+    const admin = (supabaseAdmin as unknown as {
+      auth: { admin: { updateUserById: (id: string, a: unknown) => Promise<{ error: { message: string } | null }> } };
+    }).auth.admin;
+    const { error } = await admin.updateUserById(uid, { password: data.pin });
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+// ---------- Fichaje / tickaje (coste imputado al proyecto) ----------
+
+export type ObimFichaje = {
+  id: string;
+  usuario_id: string;
+  usuario_nombre?: string;
+  fecha: string;
+  horas: number;
+  tarea: string;
+  etapa: string;
+  coste: number;
+};
+
+// Lista de fichajes: un admin ve todos; un participante solo los suyos.
+export const obimFichajesList = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<ObimFichaje[]> => {
+    const uid = (context as { userId?: string }).userId;
+    const { data: me } = await db.from("obim_usuarios").select("id,rol").eq("auth_user_id", uid).maybeSingle();
+    if (!me) return [];
+    let q = db
+      .from("obim_fichajes")
+      .select("id,usuario_id,fecha,horas,tarea,etapa,coste,obim_usuarios(nombre)")
+      .order("fecha", { ascending: false });
+    if (me.rol !== "admin") q = q.eq("usuario_id", me.id);
+    const { data, error } = await q;
+    if (error) throw new Error(error.message);
+    return (data ?? []).map((r: Record<string, unknown>) => ({
+      id: r.id as string,
+      usuario_id: r.usuario_id as string,
+      usuario_nombre: (r.obim_usuarios as { nombre?: string } | null)?.nombre ?? "",
+      fecha: r.fecha as string,
+      horas: Number(r.horas),
+      tarea: (r.tarea as string) ?? "",
+      etapa: (r.etapa as string) ?? "",
+      coste: Number(r.coste),
+    }));
+  });
+
+// Registrar horas: se imputa el coste = horas * coste_hora del usuario.
+export const obimFichajeCreate = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(
+    z.object({
+      fecha: z.string().min(1),
+      horas: z.number().positive(),
+      tarea: z.string().default(""),
+      etapa: z.string().default(""),
+      usuario_id: z.string().uuid().optional(), // solo admin puede fichar por otro
+    }),
+  )
+  .handler(async ({ data, context }) => {
+    const uid = (context as { userId?: string }).userId;
+    const { data: me } = await db.from("obim_usuarios").select("id,rol,coste_hora").eq("auth_user_id", uid).maybeSingle();
+    if (!me) throw new Error("No autorizado.");
+    let usuarioId = me.id as string;
+    let costeHora = Number(me.coste_hora);
+    if (data.usuario_id && data.usuario_id !== me.id) {
+      if (me.rol !== "admin") throw new Error("Solo un administrador puede fichar por otra persona.");
+      const { data: otro } = await db.from("obim_usuarios").select("id,coste_hora").eq("id", data.usuario_id).maybeSingle();
+      if (!otro) throw new Error("Usuario no encontrado.");
+      usuarioId = otro.id as string;
+      costeHora = Number(otro.coste_hora);
+    }
+    const coste = Math.round(data.horas * costeHora * 100) / 100;
+    const { error } = await db.from("obim_fichajes").insert({
+      usuario_id: usuarioId,
+      fecha: data.fecha,
+      horas: data.horas,
+      tarea: data.tarea,
+      etapa: data.etapa,
+      coste,
+    });
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const obimFichajeDelete = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(z.object({ id: z.string().uuid() }))
+  .handler(async ({ data, context }) => {
+    const uid = (context as { userId?: string }).userId;
+    const { data: me } = await db.from("obim_usuarios").select("id,rol").eq("auth_user_id", uid).maybeSingle();
+    if (!me) throw new Error("No autorizado.");
+    let q = db.from("obim_fichajes").delete().eq("id", data.id);
+    if (me.rol !== "admin") q = q.eq("usuario_id", me.id);
+    const { error } = await q;
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
