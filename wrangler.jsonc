@@ -9,10 +9,6 @@
     "SUPABASE_URL": "https://irpkofhsaahwwkyszmzm.supabase.co",
     "SUPABASE_PUBLISHABLE_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlycGtvZmhzYWFod3dreXN6bXptIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA1MTE2MzcsImV4cCI6MjA5NjA4NzYzN30.IEJ9Poiboah08rXQtGa6PUFVrNlxpTsLTgTDc3p2Z7E"
   },
-  "routes": [
-    { "pattern": "o-bim.com", "custom_domain": true },
-    { "pattern": "www.o-bim.com", "custom_domain": true }
-  ],
   "no_bundle": true,
   "rules": [{ "type": "ESModule", "globs": ["**/*.mjs", "**/*.js"] }],
   "observability": { "enabled": true }
